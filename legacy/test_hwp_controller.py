@@ -12,7 +12,7 @@ from unittest.mock import patch, MagicMock
 
 pytest.importorskip("win32com", reason="HwpController requires pywin32 (Windows)")
 
-from src.tools.hwp_controller import HwpController
+from legacy.hwp_controller import HwpController
 
 class TestHwpController:
     """Test suite for HWP Controller."""

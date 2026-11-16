@@ -52,7 +52,7 @@ class HwpController:
                 try:
                     # 보안 모듈 DLL 경로 (저장소 루트의 security_module 폴더 기준)
                     module_path = os.path.join(
-                        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "security_module", "FilePathCheckerModuleExample.dll"
                     )
                     self.hwp.RegisterModule("FilePathCheckerModuleExample", module_path)

@@ -1,175 +1,110 @@
-[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/jkf87-hwp-mcp-badge.png)](https://mseep.ai/app/jkf87-hwp-mcp)
-
-# HWP-MCP (한글 Model Context Protocol)
+# HWP-MCP (헤드리스 `rhwp` 기반 한글/HWPX MCP 서버)
 
 [![GitHub](https://img.shields.io/github/license/jkf87/hwp-mcp)](https://github.com/jkf87/hwp-mcp)
 
-HWP-MCP는 한글 워드 프로세서(HWP)를 Claude와 같은 AI 모델이 제어할 수 있도록 해주는 Model Context Protocol(MCP) 서버입니다. 이 프로젝트는 한글 문서를 자동으로 생성, 편집, 조작하는 기능을 AI에게 제공합니다.
+**HWP-MCP**는 한컴오피스(한글) GUI나 COM(`pywin32`)을 전혀 실행하지 않고, Rust 기반 [`rhwp`](https://github.com/edwardkim/rhwp) 엔진으로 `.hwp` 및 `.hwpx` 문서를 **헤드리스(Headless)로 읽고 편집**하는 Model Context Protocol(MCP) 서버입니다.
 
-## 주요 기능
+사용자의 키보드·마우스·포커스·클립보드를 빼앗지 않으며, 사용자가 편집기(HOP 등)에 문서를 띄워둔 상태에서도 백그라운드에서 안전하게 파일을 수정합니다.
 
-- 문서 생성 및 관리: 새 문서 생성, 열기, 저장 기능
-- 텍스트 편집: 텍스트 삽입, 글꼴 설정, 단락 추가
-- 테이블 작업: 테이블 생성, 데이터 채우기, 셀 내용 설정
-- 완성된 문서 생성: 템플릿 기반 보고서 및 편지 자동 생성
-- 일괄 작업: 여러 작업을 한 번에 실행하는 배치 기능
+---
 
-## 시스템 요구사항
+## 주요 특징
 
-- Windows 운영체제
-- 한글(HWP) 프로그램 설치
-- Python 3.10 이상 (`mcp` 패키지 요구사항)
-- 필수 Python 패키지 (requirements.txt 참조)
+- **한컴오피스 불필요**: 한글 프로그램 설치나 COM 호출 없이 `.hwp`(HWP 5.0) / `.hwpx`(OWPML) 원본 포맷을 그대로 유지하며 읽고 씁니다.
+- **SafeWriter 원자적 쓰기**: 모든 쓰기 작업은 다음 6단계를 거칩니다.
+  1. 현재 파일 SHA-256 계산 및 `expected_sha256` / 서버 최종 확인 해시 대조 (외부 변경 충돌 감지)
+  2. `<문서폴더>/.hwp-mcp-history/<파일명>/<YYYYmmdd-HHMMSS>_<sha8>.<ext>` 자동 스냅샷 백업 (최근 50개 유지)
+  3. 같은 폴더의 임시 파일에 `rhwp` 결과 출력 (원본 확장자 유지)
+  4. 임시 파일 재열기 및 데이터 손실(`losses == 0`) 검증
+  5. `os.replace` 원자적 교체 (`PermissionError` 시 3회 재시도 후 잠금 오류 안내)
+  6. 새 SHA-256 및 변경 요약 반환
+- **플랜 B 보존**: 기존 COM 기반 구현은 삭제하지 않고 [`legacy/`](legacy/) 폴더에 보존되어 있습니다.
 
-> macOS/Linux 또는 한글이 설치되지 않은 환경에서도 서버는 실행되며, 이 경우 `hwp_read_file`(HWP 파일 읽기)만 사용할 수 있습니다.
+---
 
-## 설치 방법
+## 설치 및 `rhwp` 배치
 
-1. 저장소 클론:
+### 1. Python 의존성 설치
 ```bash
 git clone https://github.com/jkf87/hwp-mcp.git
 cd hwp-mcp
-```
-
-2. 의존성 설치:
-```bash
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-3. (선택사항) MCP 패키지 설치:
-```bash
-pip install "mcp<2"
-```
+### 2. `rhwp` 프리빌트 바이너리 배치
+1. [rhwp v0.9.0 릴리스](https://github.com/edwardkim/rhwp/releases/tag/v0.9.0)에서 `rhwp-v0.9.0-windows-x86_64.zip` 과 `SHA256SUMS.txt` 를 내려받아 해시를 검증합니다.
+2. `D:/40_Tools/rhwp/` 아래에 압축을 해제합니다 (`D:/40_Tools/rhwp/rhwp/rhwp.exe`).
+   - 다른 경로에 배치한 경우 환경변수 `RHWP_EXE` 로 `rhwp.exe` 경로를 지정할 수 있습니다.
 
-## 사용 방법
-
-### Claude와 함께 사용하기
-
-Claude 데스크톱 설정 파일에 다음과 같이 HWP-MCP 서버를 등록하세요:
-
+### 3. MCP 클라이언트 등록 (예: Claude Code)
 ```json
 {
   "mcpServers": {
     "hwp": {
-      "command": "python",
-      "args": ["경로/hwp-mcp/hwp_mcp_stdio_server.py"]
+      "command": "D:/50_AI/MCP/hwp-mcp/.venv/Scripts/python.exe",
+      "args": ["D:/50_AI/MCP/hwp-mcp/hwp_mcp_stdio_server.py"]
     }
   }
 }
 ```
 
-### 주요 기능 예시
+---
 
-#### HWP 파일 읽기 (한글 프로그램 불필요, 모든 OS)
-```python
-hwp_read_file("경로/문서.hwp")  # 본문 텍스트 반환, 표는 Markdown 표로 변환
-```
+## 제공 도구 목록 (총 14개, 모두 `file_path` 필수)
 
-#### 새 문서 생성
-```python
-hwp_create()
-```
+| 도구명 | 분류 | 설명 |
+|---|---|---|
+| `hwp_info` | 조회 | 문서 형식, 페이지 수, 문단 수, 글꼴, SHA-256 해시 조회 |
+| `hwp_get_text` | 조회 | 본문 추출 (`format="text"` 또는 `"markdown"`). `rhwp` 실패 시 내장 `olefile` 리더 폴백 |
+| `hwp_search` | 조회 | 문자열 검색 및 페이지·문맥·표 셀 좌표 반환 |
+| `hwp_table_view` | 조회 | 표(Table)의 행/열 구조, 병합, 셀 좌표 및 텍스트 반환 |
+| `hwp_fill_cells` | 쓰기 | 좌표(`row`, `col`) 또는 라벨(`label`, `direction="right"\|"below"`) 기준 셀 일괄 채우기 |
+| `hwp_replace_text` | 쓰기 | 본문 및 표 셀 내 텍스트 일괄 치환 |
+| `hwp_fill_fields` | 쓰기 | 누름틀(필드) 이름-값 매핑 채우기 |
+| `hwp_insert_text` | 쓰기 | 지정 섹션/문단/오프셋에 텍스트 삽입 |
+| `hwp_run_plan` | 쓰기 | `rhwp` 선언적 편집 계획서(JSON) 일괄 실행 |
+| `hwp_render_page` | 렌더 | 특정 페이지(또는 전체)를 PNG/SVG 파일로 렌더링해 경로 반환 (시각 확인용) |
+| `hwp_history` | 이력 | `.hwp-mcp-history` 스냅샷 목록 조회 |
+| `hwp_restore` | 쓰기 | 지정 스냅샷(`snapshot_id`)으로 복원 (현재 상태도 백업 후 원자 교체) |
+| `hwp_diff` | 조회 | 두 문서 또는 현재 문서와 스냅샷 간 텍스트 unified diff |
+| `hwp_rhwp_call` | 탈출구 | `rhwp` 의 180여 개 전체 도구 직접 호출 (쓰기 계열은 반드시 `SafeWriter` 경유) |
 
-#### 텍스트 삽입
-```python
-hwp_insert_text("원하는 텍스트를 입력하세요.")
-```
+---
 
-#### 테이블 생성 및 데이터 입력
-```python
-# 테이블 생성
-hwp_insert_table(rows=5, cols=2)
+## 히스토리·복원 및 HOP(편집기) 연동 흐름
 
-# 테이블에 데이터 채우기
-hwp_fill_table_with_data([
-    ["월", "판매량"], 
-    ["1월", "120"], 
-    ["2월", "150"], 
-    ["3월", "180"], 
-    ["4월", "200"]
-], has_header=True)
+1. **읽기**: 에이전트가 `hwp_info` / `hwp_table_view` / `hwp_get_text` 로 문서를 읽으면 서버가 현재 파일의 SHA-256 을 기록합니다.
+2. **편집**: `hwp_fill_cells` 나 `hwp_replace_text` 호출 시 `SafeWriter` 가 원본을 `.hwp-mcp-history/<파일명>/` 에 스냅샷으로 저장한 뒤, 임시 파일 검증을 거쳐 원자적으로 교체합니다.
+3. **충돌 방지**: 사용자가 HOP 등 편집기에서 파일을 수정·저장해 해시가 바뀌면 `HashConflictError` 로 덮어쓰기를 차단합니다. (필요 시 다시 읽거나 `force=True` 지정)
+4. **파일 잠금 안내**: 편집기가 파일을 배타적으로 잠그고 있으면 3회 재시도 후 명확한 잠금 오류를 반환하며, 원본 스냅샷은 그대로 보존됩니다.
+5. **확인 및 복원**: `hwp_diff` 로 변경 내역을 비교하거나 `hwp_render_page` 로 시각 확인을 수행하고, 문제 시 `hwp_history` → `hwp_restore` 로 즉시 되돌릴 수 있습니다.
 
-# 표에 연속된 숫자 채우기
-hwp_fill_column_numbers(start=1, end=10, column=1, from_first_cell=True)
-```
-
-#### 문서 저장
-```python
-hwp_save("경로/문서명.hwp")
-```
-
-#### 일괄 작업 예시
-```python
-hwp_batch_operations([
-    {"operation": "hwp_create"},
-    {"operation": "hwp_insert_text", "params": {"text": "제목"}},
-    {"operation": "hwp_set_font", "params": {"size": 20, "bold": True}},
-    {"operation": "hwp_save", "params": {"path": "경로/문서명.hwp"}}
-])
-```
+---
 
 ## 프로젝트 구조
 
 ```
 hwp-mcp/
-├── hwp_mcp_stdio_server.py  # 메인 서버 스크립트
-├── requirements.txt         # 의존성 패키지 목록
-├── hwp-mcp-구조설명.md       # 프로젝트 구조 설명 문서
+├── hwp_mcp_stdio_server.py      # 얇은 stdio 진입점
+├── requirements.txt             # 의존성 (pywin32/comtypes 는 legacy 전용 주석)
 ├── src/
+│   ├── server.py                # FastMCP 서버 및 14개 도구 구현
+│   ├── core/
+│   │   ├── rhwp_backend.py      # rhwp.exe mcp-serve 상주 프록시 + CLI 보조
+│   │   └── safe_writer.py       # 해시 검증, 스냅샷(50개), 재열기 검증, 원자 교체
 │   ├── tools/
-│   │   ├── hwp_controller.py  # 한글 제어 핵심 컨트롤러
-│   │   └── hwp_table_tools.py # 테이블 관련 기능 전문 모듈
-│   ├── utils/                 # 유틸리티 함수
-│   └── __tests__/             # 테스트 모듈
-└── security_module/
-    └── FilePathCheckerModuleExample.dll  # 보안 모듈
+│   │   └── hwp_reader.py        # olefile 기반 폴백 텍스트 리더
+│   ├── utils/
+│   │   └── command_parser.py
+│   └── __tests__/               # 기존 파서/리더 단위 테스트
+├── tests/                       # SafeWriter 단위, rhwp 통합, MCP E2E 테스트
+└── legacy/                      # 기존 한컴 COM 기반 코드 보존 (플랜 B)
 ```
 
-## 트러블슈팅
+## 테스트 실행
 
-### 보안 모듈 관련 문제
-기본적으로 한글 프로그램은 외부에서 파일 접근 시 보안 경고를 표시합니다. 이를 우회하기 위해 `FilePathCheckerModuleExample.dll` 모듈을 사용합니다. 만약 보안 모듈 등록에 실패해도 기능은 작동하지만, 파일 열기/저장 시 보안 대화 상자가 표시될 수 있습니다.
-
-### 한글 연결 실패
-한글 프로그램이 실행 중이지 않을 경우 연결에 실패할 수 있습니다. 한글 프로그램이 설치되어 있고 정상 작동하는지 확인하세요.
-
-### 테이블 데이터 입력 문제
-테이블에 데이터를 입력할 때 커서 위치가 예상과 다르게 동작하는 경우가 있었으나, 현재 버전에서는 이 문제가 해결되었습니다. 테이블의 모든 셀에 정확하게 데이터가 입력됩니다.
-
-## 변경 로그
-
-### 2025-03-27
-- 표 생성 및 데이터 채우기 기능 개선
-  - 표 안에 표가 중첩되는 문제 해결
-  - 표 생성과 데이터 채우기 기능 분리
-  - 표 생성 전 현재 커서 위치 확인 로직 추가
-  - 기존 표에 데이터만 채우는 기능 개선
-- 프로젝트 관리 개선
-  - .gitignore 파일 추가 (임시 파일, 캐시 파일 등 제외)
-
-### 2025-03-25
-- 테이블 데이터 입력 기능 개선
-  - 첫 번째 셀부터 정확하게 데이터 입력 가능
-  - 셀 선택 및 커서 위치 설정 로직 개선
-  - 텍스트 입력 시 커서 위치 유지 기능 추가
-- 테이블 전용 도구 모듈(`hwp_table_tools.py`) 추가
-- `hwp_fill_column_numbers` 함수에 `from_first_cell` 옵션 추가
-
-## 라이선스
-
-이 프로젝트는 MIT 라이선스에 따라 배포됩니다. 자세한 내용은 [LICENSE](LICENSE) 파일을 참조하세요.
-
-## 기여 방법
-
-1. 이슈 제보 또는 기능 제안: GitHub 이슈를 사용하세요.
-2. 코드 기여: 변경사항을 포함한 Pull Request를 제출하세요.
-
-## 관련 프로젝트
-
-- [HWP SDK](https://www.hancom.com/product/sdk): 한글과컴퓨터의 공식 SDK
-- [Cursor MCP](https://docs.cursor.com/context/model-context-protocol#configuration-locations)
-- [Smithery](https://smithery.ai/server/@jkf87/hwp-mcp)
-
-## 연락처
-
-프로젝트 관련 문의는 GitHub 이슈, [코난쌤](https://www.youtube.com/@conanssam)를 통해 해주세요. 
+```bash
+.venv\Scripts\python.exe -m pytest src/__tests__ tests -v
+```

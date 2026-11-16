@@ -5,3 +5,8 @@ __pycache__/
 .Python
 *.log
 *.hwp
+.venv/
+*.hwpx
+.hwp-mcp-history/
+.hwp-mcp-tmp-*
+tests/local_samples/
