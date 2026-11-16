@@ -18,7 +18,7 @@
 ## 설치
 
 ```bash
-git clone -b feat/rhwp-headless https://github.com/wkuMyeungsu/hwp-mcp.git
+git clone -b feat/rhwp-headless https://github.com/myeongsu-dev/hwp-mcp.git
 cd hwp-mcp
 python -m venv .venv
 .venv\Scripts\activate
